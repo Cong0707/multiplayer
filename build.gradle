@@ -31,6 +31,7 @@ ext{
     mindustryVersion = 'v146'
     jabelVersion = "93fde537c7"
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
 }
 
 //java 8 backwards compatibility flag。
@@ -62,7 +63,7 @@ task jarAndroid{
         if (new File("/root/congProjects").exists()) {
             d8 = "/opt/androidsdk/build-tools/d8"
         } else {
-            d8 = "d8"
+            d8 = isWindows ? "d8.bat" : "d8"
         }
 
         if(!sdkRoot || !new File(sdkRoot).exists()) throw new GradleException("No valid Android SDK found. Ensure that ANDROID_HOME is set to your Android SDK directory.");
