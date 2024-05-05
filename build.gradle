@@ -1,15 +1,18 @@
 buildscript {
+    ext.serialization_version = '1.3.0'
     ext.kotlin_version = '1.9.20-Beta'
     repositories {
         mavenCentral()
     }
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.jetbrains.kotlin:kotlin-serialization:$kotlin_version" // 添加 kotlinx.serialization 的依赖
     }
 }
 
 apply plugin: "java"
 apply plugin: 'kotlin'
+apply plugin: 'kotlinx-serialization'
 
 version '1.0'
 
@@ -44,6 +47,7 @@ dependencies{
     annotationProcessor "com.github.Anuken:jabel:$jabelVersion"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     implementation 'javax.persistence:javax.persistence-api:2.2'
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.0"
 }
 
 //force arc version
@@ -59,12 +63,7 @@ task jarAndroid{
     dependsOn "jar"
 
     doLast{
-        def d8
-        if (new File("/root/congProjects").exists()) {
-            d8 = "/opt/androidsdk/build-tools/d8"
-        } else {
-            d8 = isWindows ? "d8.bat" : "d8"
-        }
+        def d8 = isWindows ? "d8.bat" : "d8"
 
         if(!sdkRoot || !new File(sdkRoot).exists()) throw new GradleException("No valid Android SDK found. Ensure that ANDROID_HOME is set to your Android SDK directory.");
 

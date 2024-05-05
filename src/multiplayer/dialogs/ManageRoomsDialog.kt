@@ -2,30 +2,39 @@ package multiplayer.dialogs
 
 import arc.graphics.Color
 import arc.net.Client
-import arc.scene.ui.TextField
+import arc.scene.ui.Label
 import arc.scene.ui.layout.Cell
 import arc.scene.ui.layout.Table
-import arc.struct.Seq
-import arc.util.Strings
+import arc.util.Log
+import arc.util.Time
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import mindustry.Vars
 import mindustry.gen.Icon
 import mindustry.gen.Tex
+import mindustry.net.Host
+import mindustry.net.NetworkIO
 import mindustry.ui.Styles
 import mindustry.ui.dialogs.BaseDialog
 import multiplayer.ClajIntegration.createRoom
 import multiplayer.Main
+import multiplayer.Server
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.URL
+import java.nio.ByteBuffer
 
 class ManageRoomsDialog : BaseDialog("管理claj房间") {
     var serverIP: String? = null
     var serverPort: Int = 0
+    lateinit var label: Cell<Label>
 
     private var list: Table? = null
-    private var field: TextField? = null
-    private var valid: Boolean = false
-    private var flip: Boolean = false
-    private var clajURLs: Seq<String> = Seq.with("new.xem8k5.top:1050")
 
     init {
+        loadURL()
+
         addCloseButton()
 
         cont.defaults().width(if (Vars.mobile) 550f else 750f)
@@ -36,29 +45,68 @@ class ManageRoomsDialog : BaseDialog("管理claj房间") {
             this.list = list
         }.row()
 
-        cont.table { url: Table ->
-            url.field(clajURLs.first()) { this.setURL(it) }.maxTextLength(100).valid { this.validURL(it) }.with { f: TextField? -> field = f }.growX()
-            url.button(Icon.downOpen, Styles.clearNonei) { flip = !flip }.size(48f).padLeft(8f)
-        }.row()
-
-        cont.collapser({ list: Table ->
-            clajURLs.each { url: String ->
-                list.button(url, Styles.cleart) { setURL(url) }.height(32f).growX().row()
-            }
-        }, true, { flip }).row()
-
-        cont.button("新建房间并生成claj代码") {
+        cont.button("新建房间并生成房间链接") {
             try {
+                loadURL()
+                if (serverIP == null) throw Exception("获取联机服务器失败")
                 list?.add(Room())?.row()
             } catch (ignored: Exception) {
                 Vars.ui.showErrorMessage(ignored.message)
             }
-        }.disabled { list!!.children.size >= 4 || !valid }.row()
+        }.disabled { list!!.children.size >= 1 }.row()
 
-        cont.labelWrap("允许你的朋友通过claj代码联机").labelAlign(2, 8).padTop(16f).width(400f).get().style.fontColor = Color.lightGray
+        label = cont.labelWrap("Using server $serverIP:$serverPort").labelAlign(2, 8).padTop(16f).width(400f).apply {
+            get().style.fontColor = Color.lightGray
+        }
 
-        setURL(clajURLs.first())
         Vars.ui.paused.shown { this.fixPausedDialog() }
+    }
+
+    fun loadURL() {
+        val serverListJson = URL("http://p4.simpfun.cn:8667/client/servers").readText()
+        val serverList = Json.decodeFromString<List<Server>>(serverListJson)
+        Log.info("Loading multiplayer worker servers $serverList")
+        val pingMap = mutableMapOf<Int, Server>()
+        serverList.forEach {
+            val host = pingHostImpl(it.address, it.port)
+            if (host.modeName == "MultiPlayer" || host.players < 5) {
+                pingMap[host.ping] = it
+            }
+        }
+        Log.info("Ping result ${pingMap.toSortedMap()}")
+        val result = pingMap.toSortedMap().minByOrNull { it.key }?.value
+        Log.info("Result is $result")
+        serverIP = result?.address
+        serverPort = result?.port!!
+        Log.info("Using $serverIP:$serverPort")
+        //label.update or something
+    }
+
+    private fun pingHostImpl(address: String, port: Int): Host {
+        DatagramSocket().use { socket ->
+            val time = Time.millis()
+            socket.send(
+                DatagramPacket(
+                    byteArrayOf(-2, 1),
+                    2,
+                    InetAddress.getByName(address),
+                    port
+                )
+            )
+            socket.soTimeout = 2000
+
+            val packet = DatagramPacket(ByteArray(512), 512)
+            socket.receive(packet)
+
+            val buffer = ByteBuffer.wrap(packet.data)
+            val host = NetworkIO.readServerData(
+                Time.timeSinceMillis(time).toInt(),
+                packet.address.hostAddress,
+                buffer
+            )
+            host.port = port
+            return host
+        }
     }
 
     private fun fixPausedDialog() {
@@ -74,19 +122,6 @@ class ManageRoomsDialog : BaseDialog("管理claj房间") {
 
         val index = if (Vars.state.isCampaign || Vars.state.isEditor) 5 else 7
         root.cells.insert(index, root.cells.remove(index + 1))
-    }
-
-    // region URL
-    private fun setURL(url: String) {
-        field!!.text = url
-
-        val semicolon = url.indexOf(':')
-        serverIP = url.substring(0, semicolon)
-        serverPort = Strings.parseInt(url.substring(semicolon + 1))
-    }
-
-    private fun validURL(url: String): Boolean {
-        return (url.contains(":") && Strings.canParseInt(url.substring(url.indexOf(':') + 1))).also { valid = it }
     }
 
     // endregion
