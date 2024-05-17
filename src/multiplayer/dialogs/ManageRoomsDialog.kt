@@ -25,7 +25,7 @@ import java.net.InetAddress
 import java.net.URL
 import java.nio.ByteBuffer
 
-class ManageRoomsDialog : BaseDialog("管理claj房间") {
+class ManageRoomsDialog : BaseDialog("管理 CLaJ 房间") {
     var serverIP: String? = null
     var serverPort: Int = 0
     lateinit var label: Cell<Label>
@@ -45,7 +45,7 @@ class ManageRoomsDialog : BaseDialog("管理claj房间") {
             this.list = list
         }.row()
 
-        cont.button("新建房间并生成房间链接") {
+        cont.button("新建 CLaJ 房间") {
             try {
                 loadURL()
                 if (serverIP == null) throw Exception("获取联机服务器失败")
@@ -113,12 +113,12 @@ class ManageRoomsDialog : BaseDialog("管理claj房间") {
         val root = Vars.ui.paused.cont
 
         if (Vars.mobile) {
-            root.row().buttonRow("管理claj房间", Icon.planet) { this.show() }.colspan(3).disabled { !Vars.net.server() }
+            root.row().buttonRow("管理 CLaJ 房间", Icon.planet) { this.show() }.colspan(3).disabled { !Vars.net.server() }
             return
         }
 
         root.row()
-        root.button("管理claj房间", Icon.planet) { this.show() }.colspan(2).width(450f).disabled { !Vars.net.server() }.row()
+        root.button("管理 CLaJ 房间", Icon.planet) { this.show() }.colspan(2).width(450f).disabled { !Vars.net.server() }.row()
 
         val index = if (Vars.state.isCampaign || Vars.state.isEditor) 5 else 7
         root.cells.insert(index, root.cells.remove(index + 1))
