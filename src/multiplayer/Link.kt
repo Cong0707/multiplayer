@@ -1,3 +1,3 @@
 package multiplayer
 
-data class Link(val key: String, val ip: String, val port: Int)
+data class Link(val ip: String, val port: Int)

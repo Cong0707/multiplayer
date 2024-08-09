@@ -3,14 +3,14 @@ package multiplayer.dialogs
 import arc.scene.ui.layout.Stack
 import arc.scene.ui.layout.Table
 import mindustry.Vars
+import mindustry.core.NetClient.connect
 import mindustry.gen.Icon
 import mindustry.ui.dialogs.BaseDialog
-import multiplayer.ClajIntegration.joinRoom
 import multiplayer.Link
 import java.io.IOException
 
-class JoinViaClajDialog : BaseDialog("通过claj加入游戏") {
-    private var lastLink: String = "请输入您的claj代码"
+class JoinRoomDialog : BaseDialog("通过组网加入游戏") {
+    private var lastLink: String = "请输入您的房间代码"
 
     private var valid: Boolean = false
     private var output: String? = null
@@ -33,7 +33,7 @@ class JoinViaClajDialog : BaseDialog("通过claj加入游戏") {
                 }
 
                 val link = parseLink(lastLink)
-                joinRoom(link.ip, link.port, link.key) {
+                connect(link.ip, link.port).also {
                     Vars.ui.join.hide()
                     hide()
                 }
@@ -82,21 +82,15 @@ class JoinViaClajDialog : BaseDialog("通过claj加入游戏") {
     private fun parseLink(link: String): Link {
         var link1 = link
         link1 = link1.trim { it <= ' ' }
-        if (!link1.startsWith("CLaJ")) throw IOException("无效的claj代码：无CLaJ前缀")
+        if (!link1.startsWith("ZeroTier")) throw IOException("无效的ZeroTier代码：无ZeroTier前缀")
 
-        val hash = link1.indexOf('#')
-        if (hash != 42 + 4) throw IOException("无效的claj代码：长度错误")
+        // 找到冒号的位置
+        val colonIndex = link.indexOf(':')
+        // 提取IP地址部分（去掉前面的"ZeroTier"）
+        val ip = "zerotier:" + link.substring(8, colonIndex)
+        // 提取端口部分
+        val port = link.substring(colonIndex + 1).toInt()
 
-        val semicolon = link1.indexOf(':')
-        if (semicolon == -1) throw IOException("无效的claj代码：服务器地址格式不正确")
-
-        val port: Int
-        try {
-            port = link1.substring(semicolon + 1).toInt()
-        } catch (ignored: Throwable) {
-            throw IOException("无效的claj代码：找不到服务器端口")
-        }
-
-        return Link(link1.substring(0, hash), link1.substring(hash + 1, semicolon), port)
+        return Link(ip, port)
     }
 }

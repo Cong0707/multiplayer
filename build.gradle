@@ -1,5 +1,5 @@
 buildscript {
-    ext.kotlin_version = '2.0.0-RC3'
+    ext.kotlin_version = '2.0.20-RC'
     repositories {
         mavenCentral()
     }
@@ -48,6 +48,8 @@ dependencies{
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     implementation 'javax.persistence:javax.persistence-api:2.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
+
+    implementation(files("libs/libzt-1.8.10.jar"))
 }
 
 //force arc version
