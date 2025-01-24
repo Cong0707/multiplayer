@@ -1,5 +1,6 @@
 package multiplayer
 
+import arc.Core
 import arc.Events
 import arc.func.Cons
 import arc.net.Client
@@ -15,11 +16,10 @@ import mindustry.game.EventType.ClientPreConnectEvent
 import mindustry.gen.Call
 import mindustry.io.TypeIO
 import mindustry.net.ArcNetProvider.PacketSerializer
-import java.io.IOException
 import java.nio.ByteBuffer
 
 object ClajIntegration {
-    private var clients: Seq<Client> = Seq()
+    private val clients = Seq<Client>()
     private var serverListener: NetListener? = null
 
     fun load() {
@@ -35,13 +35,12 @@ object ClajIntegration {
     }
 
     // region room management
-    @Throws(IOException::class)
-    fun createRoom(ip: String, port: Int, link: Cons<String?>, disconnected: Runnable): Client {
+    fun createRoom(ip: String, port: Int, link: Cons<String?>, disconnected: Runnable?): Client {
         val client = Client(8192, 8192, Serializer())
-        Threads.daemon("CLaJ Room") { client.run() }
+        Threads.daemon("CLaJ Room", client)
 
         client.addListener(object : NetListener {
-            /** Used when creating redirectors.  */
+            /** Used when creating redirectors.   */
             var key: String? = null
 
             override fun connected(connection: Connection) {
@@ -49,13 +48,13 @@ object ClajIntegration {
             }
 
             override fun disconnected(connection: Connection, reason: DcReason) {
-                disconnected.run()
+                Core.app.post(disconnected)
             }
 
             override fun received(connection: Connection, `object`: Any) {
                 if (`object` is String) {
                     if (`object`.startsWith("CLaJ")) {
-                        this.key = `object`
+                        key = `object`
                         link["$key#$ip:$port"]
                     } else if (`object` == "new") {
                         try {
@@ -73,10 +72,9 @@ object ClajIntegration {
         return client
     }
 
-    @Throws(IOException::class)
     fun createRedirector(ip: String?, port: Int, key: String?) {
         val client = Client(8192, 8192, Serializer())
-        Threads.daemon("CLaJ Redirector") { client.run() }
+        Threads.daemon("CLaJ Redirector", client)
 
         client.addListener(serverListener)
         client.addListener(object : NetListener {
@@ -89,7 +87,7 @@ object ClajIntegration {
         clients.add(client)
     }
 
-    fun joinRoom(ip: String, port: Int, key: String, success: Runnable) {
+    fun joinRoom(ip: String?, port: Int, key: String, success: Runnable) {
         Vars.logic.reset()
         Vars.net.reset()
 
@@ -112,10 +110,9 @@ object ClajIntegration {
         clients.clear()
     }
 
+
     // endregion
-
-
-    class Serializer : PacketSerializer() {
+    internal class Serializer : PacketSerializer() {
         override fun write(buffer: ByteBuffer, `object`: Any) {
             if (`object` is String) {
                 buffer.put(linkID)

@@ -1,183 +1,111 @@
 package multiplayer.dialogs
 
+import arc.Core
 import arc.graphics.Color
 import arc.net.Client
-import arc.scene.ui.Label
 import arc.scene.ui.layout.Cell
 import arc.scene.ui.layout.Table
+import arc.util.Http
 import arc.util.Log
-import arc.util.Time
+import arc.util.serialization.Jval
 import mindustry.Vars
 import mindustry.gen.Icon
-import mindustry.gen.Tex
 import mindustry.net.Host
-import mindustry.net.NetworkIO
-import mindustry.ui.Styles
 import mindustry.ui.dialogs.BaseDialog
-import multiplayer.ClajIntegration.createRoom
-import multiplayer.Main
-import multiplayer.Server
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.URL
-import java.nio.ByteBuffer
-import kotlinx.serialization.json.Json
-import java.util.*
+import multiplayer.ClajIntegration
 
 class ManageRoomsDialog : BaseDialog("管理claj房间") {
-    var hostList: MutableList<Host> = Collections.synchronizedList(mutableListOf<Host>())
-    var serverIP: String? = null
-    var serverPort: Int = 0
-    var label: Cell<Label>
-
-    private var list: Table? = null
+    private val api = "https://api.mindustry.top/servers/claj"
+    private var servers: List<ClajServer> = emptyList()
+    private val list: Table
 
     init {
         addCloseButton()
 
         cont.defaults().width(if (Vars.mobile) 550f else 750f)
 
-        cont.table { list: Table ->
-            list.defaults().growX().padBottom(8f)
-            list.update { list.cells.removeAll { cell: Cell<*> -> cell.get() == null } } // remove closed rooms
-            this.list = list
-        }.row()
+        this.list = cont.table().get()
+        list.defaults().growX().padBottom(8f)
+        list.update { list.cells.retainAll { cell: Cell<*> -> cell.get() != null } } // remove closed rooms
+        cont.row()
+        cont.labelWrap("选择一个服务器，创建Claj房间，复制Claj代码给你的朋友来联机").labelAlign(2, 8).padTop(16f).width(400f).get().style.fontColor = Color.lightGray
 
-        cont.button("新建房间并生成房间链接") {
-            try {
-                loadURL()
-                if (serverIP == null) throw Exception("获取联机服务器失败")
-                list?.add(Room())?.row()
-            } catch (ignored: Exception) {
-                Vars.ui.showErrorMessage(ignored.message)
-            }
-        }.disabled { list!!.children.size >= 1 }.row()
-
-        label = cont.labelWrap(
-            buildServerList()
-        ).labelAlign(2, 8).padTop(16f).width(500f).apply {
-            get().style.fontColor = Color.lightGray
-        }
-
-        Vars.ui.paused.shown { this.fixPausedDialog() }
-        /*
-        try {
-            loadURL()
-        } catch (e: Exception) {
-            Log.err("Err on loading claj servers", e)
-        }
-        */
-    }
-
-    fun loadURL() {
-        val serverListJson = URL("http://p4.simpfun.cn:8667/client/servers").readText()
-        val serverList: List<Server> = Json.decodeFromString(serverListJson)
-        Log.info("Loading multiplayer worker servers $serverList")
-
-        hostList = Collections.synchronizedList(mutableListOf<Host>())
-        val threads = serverList.map {
-            Thread {
-                val host = pingHostImpl(it.address, it.port)
-                hostList.add(host)
-            }
-        }
-        threads.forEach { it.start() }
-        threads.forEach { it.join() }
-
-        synchronized(hostList){
-            hostList.sortBy { it.ping }
-            Log.info("Result is $hostList")
-            val first = hostList.first { host -> host.modeName == "MultiPlayer" || host.players < host.playerLimit }
-            serverIP = first.address
-            serverPort = first.port
-            Log.info("Using $serverIP:$serverPort")
-            label.update {
-                it.setText(
-                    buildServerList()
-                )
-            }
-        }
-    }
-
-    private fun buildServerList(): String {
-        if (hostList.size == 0) {
-            return ""
-        }
-        return StringBuilder()
-            .appendLine("在线服务器(${hostList.size}):")
-            .apply {
-                hostList.forEach {
-                    this.appendLine("${it.address}:${it.port}=${it.ping}ms -> ${it.players}/${it.playerLimit} Rooms")
+        shown {
+            list.clearChildren()
+            if (servers.isEmpty()) {
+                list.add("获取可用服务器中，请稍后...")
+                Http.get(api) { res: Http.HttpResponse ->
+                    servers += Jval.read(res.resultAsString).asArray().asIterable().mapNotNull {
+                        try {
+                            val addr = it.asString().split(":")[0]
+                            val port = it.asString().split(":").getOrNull(1)?.toInt() ?: Vars.port
+                            ClajServer(addr, port)
+                        } catch (e: Exception) {
+                            Log.warn("解析Claj服务器失败: ${e.message}")
+                            return@mapNotNull null
+                        }
+                    }
+                    Core.app.post { show() }
+                }
+            } else {
+                servers.forEach {
+                    list.add(it).row()
+                    if (!it.hasChildren()) it.rebuild()
                 }
             }
-            .toString()
-    }
+        }
 
-    private fun pingHostImpl(address: String, port: Int): Host {
-        DatagramSocket().use { socket ->
-            val time = Time.millis()
-            socket.send(
-                DatagramPacket(
-                    byteArrayOf(-2, 1),
-                    2,
-                    InetAddress.getByName(address),
-                    port
-                )
-            )
-            socket.soTimeout = 2000
-
-            val packet = DatagramPacket(ByteArray(512), 512)
-            socket.receive(packet)
-
-            val buffer = ByteBuffer.wrap(packet.data)
-            val host = NetworkIO.readServerData(
-                Time.timeSinceMillis(time).toInt(),
-                packet.address.hostAddress,
-                buffer
-            )
-            host.port = port
-            return host
+        buttons.button("手动添加", Icon.add, Vars.iconMed) {
+            Vars.ui.showTextInput("添加Claj服务器", "请输入服务器地址", "", { addr ->
+                val port = addr.split(":").getOrNull(1)?.toInt() ?: Vars.port
+                servers += ClajServer(addr.split(":")[0], port)
+                show()
+            })
         }
     }
 
-    private fun fixPausedDialog() {
-        val root = Vars.ui.paused.cont
+    internal data class ClajServer(val host: String, val port: Int, var link: String? = null) : Table() {
+        private var ping: Result<Host>? = null
+        private var client: Client? = null
 
-        if (Vars.mobile) {
-            root.row().buttonRow("管理claj房间", Icon.planet) { this.show() }.colspan(3).disabled { !Vars.net.server() }
-            return
-        }
+        fun rebuild() {
+            clearChildren()
+            if (link != null) {
+                add(link).fontScale(.7f).ellipsis(true).growX()
+                button(Icon.copy, Vars.iconMed) {
+                    Core.app.clipboardText = link
+                    Vars.ui.showInfoFade("@copied")
+                }
+                button(Icon.cancel, Vars.iconMed) { this.close() }
+            } else {
+                add("$host:$port").growX()
+                label {
+                    val info = ping ?: return@label "Ping..."
+                    info.getOrNull()?.let { "${it.ping}ms" } ?: "[red]Err"
+                }
+                button(Icon.refresh, Vars.iconMed, this::ping).disabled { ping == null }
+                button(Icon.play, Vars.iconMed) {
+                    try {
+                        client = ClajIntegration.createRoom(host, port, { this.link = it!!;Core.app.post(this::rebuild) }, this::close)
+                    } catch (e: Exception) {
+                        Vars.ui.showErrorMessage(e.message)
+                    }
+                }.disabled { ping?.isSuccess != true || client != null }
 
-        root.row()
-        root.button("管理claj房间", Icon.planet) { this.show() }.colspan(2).width(450f).disabled { !Vars.net.server() }.row()
-
-        val index = if (Vars.state.isCampaign || Vars.state.isEditor) 5 else 7
-        root.cells.insert(index, root.cells.remove(index + 1))
-    }
-
-    // endregion
-    inner class Room : Table() {
-        private var client: Client
-        private var link: String? = null
-
-        init {
-            client = createRoom(serverIP!!, serverPort, { this.link = it }, { this.close() })
-
-            table(Tex.underline) {
-                it.label { link }.growX().left().fontScale(.7f).ellipsis(true)
-            }.growX()
-
-            table {
-                it.defaults().size(48f).padLeft(8f)
-                it.button(Icon.copy, Styles.clearNonei) { Main.copy(link) }
-                it.button(Icon.cancel, Styles.clearNonei) { this.close() }
+                ping()
             }
+        }
+
+        fun ping() {
+            ping = null
+            Vars.net.pingHost(host, port, { ping = Result.success(it); }, { ping = Result.failure(it) })
         }
 
         private fun close() {
-            client.close()
-            remove()
+            client?.close()
+            link = null
+            client = null
+            rebuild()
         }
     }
 }
